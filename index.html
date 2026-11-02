@@ -259,6 +259,8 @@ const ALL = CONTROLS.flatMap(([, list]) => list);
 /* ---------- audio context ---------- */
 let ac = null;
 const getAC = () => (ac ||= new (window.AudioContext || window.webkitAudioContext)());
+// iOS only unlocks audio inside a real touch; unlock on the first tap so delayed auto-play works too.
+document.addEventListener('pointerdown', () => { const c = getAC(); if (c.state !== 'running') c.resume(); }, { passive: true });
 
 /* ---------- source ---------- */
 let src = null;           // { data: Float32Array, sr, name }
@@ -332,7 +334,9 @@ $('#recBtn').addEventListener('click', async () => {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   } catch (e) {
-    hint('#srcHint', 'De microfoon is hier niet beschikbaar. Geef toestemming in je browser, of neem op met je telefoon (bijv. Dictafoon) en kies het bestand via "Bestand kiezen".', 'warn');
+    hint('#srcHint', inArtifact
+      ? 'Binnen Claude mag deze pagina je microfoon niet gebruiken. Open Noisy in Safari via https://spuxecom.github.io/Noisy/ om op te nemen, of neem op met Dictafoon, bewaar in Bestanden en kies het via "Bestand kiezen".'
+      : 'De microfoon is geblokkeerd. Sta hem toe via het aA-menu in de adresbalk (Safari) of het slotje (Chrome) en probeer opnieuw.', 'warn');
     return;
   }
   const mr = new MediaRecorder(stream);
@@ -737,14 +741,14 @@ $('#saveBtn').addEventListener('click', async () => {
   const wav = encodeWav(out, SR);
   if (inArtifact) {
     const dl = await downloadsP;
-    if (!dl) { hint('#saveHint', 'Downloaden is in deze weergave niet beschikbaar. Open index.html uit de repository in je browser.', 'warn'); return; }
+    if (!dl) { hint('#saveHint', 'Downloaden is in deze weergave niet beschikbaar. Open Noisy via https://spuxecom.github.io/Noisy/', 'warn'); return; }
     try {
       await dl.save({ filename: base + '.zip', data: zipOne(base + '.wav', wav) });
       hint('#saveHint', `Opgeslagen: ${base}.zip met ${base}.wav erin.`, 'ok');
     } catch (err) {
       if (err && err.code === 'declined') hint('#saveHint', 'Download geannuleerd.', '');
       else if (err && err.code === 'rate_limited') hint('#saveHint', 'Er staat al een downloadvenster open. Rond dat eerst af.', 'warn');
-      else hint('#saveHint', 'Downloaden lukt hier niet. Open index.html uit de repository in je browser.', 'warn');
+      else hint('#saveHint', 'Downloaden lukt hier niet. Open Noisy via https://spuxecom.github.io/Noisy/', 'warn');
     }
     return;
   }
