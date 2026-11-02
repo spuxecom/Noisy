@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- ARTIFACT:START -->
+<title>Noisy</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: instrument rack. Source and result strips on the left, the shaping panel on the right; one column on phones. */
+:root {
+  --bg: #E7EAF0;
+  --panel: #F7F8FA;
+  --well: #EDF0F5;
+  --ink: #161A24;
+  --muted: #5B6377;
+  --line: #CED3DE;
+  --accent: #2B45D4;
+  --accent-ink: #FFFFFF;
+  --signal: #E2711F;
+  --wave: #161A24;
+  --wave-dim: #A3AABA;
+  --rec: #D23A3A;
+  --ok: #1D7F54;
+  --warn: #9A6412;
+  --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10131A; --panel: #181C26; --well: #12151D; --ink: #E6E9F0; --muted: #98A0B4; --line: #2B3141;
+    --accent: #8195FF; --accent-ink: #0D1124; --signal: #F2964F; --wave: #E6E9F0; --wave-dim: #485066;
+    --rec: #F06464; --ok: #4CC08A; --warn: #E3AA4E; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10131A; --panel: #181C26; --well: #12151D; --ink: #E6E9F0; --muted: #98A0B4; --line: #2B3141;
+  --accent: #8195FF; --accent-ink: #0D1124; --signal: #F2964F; --wave: #E6E9F0; --wave-dim: #485066;
+  --rec: #F06464; --ok: #4CC08A; --warn: #E3AA4E; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.app {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+  display: flex; flex-direction: column; gap: 22px;
+}
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(2.3rem, 6vw, 3.4rem); letter-spacing: -0.035em; line-height: 0.95; margin: 0; }
+h1 span { color: var(--signal); }
+.brand p { margin: 10px 0 0; max-width: 60ch; color: var(--muted); }
+.spec { font-size: 12px; color: var(--muted); border: 1px solid var(--line); padding: 5px 11px; border-radius: 999px; white-space: nowrap; }
+
+.grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 18px; align-items: start; }
+.strip { grid-column: 1; }
+.controls { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: 16px; }
+@media (max-width: 880px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .strip, .controls { grid-column: 1; grid-row: auto; position: static; }
+}
+.strip, .controls {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0;
+}
+.strip.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
+h2 { font-family: var(--f-display); font-weight: 700; font-size: 1.2rem; margin: 0; letter-spacing: -0.015em; text-wrap: balance; }
+.head { display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.tag { font-size: 12px; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn {
+  font: inherit; font-size: 14px; font-weight: 500; line-height: 1.2;
+  display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px;
+  border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.ghost { background: transparent; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--rec); flex: none; }
+.btn.rec.on { border-color: var(--rec); color: var(--rec); }
+.btn.rec.on .dot { animation: pulse 0.9s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+kbd { font-family: var(--f-mono); font-size: 11px; padding: 1px 5px; border-radius: 4px; border: 1px solid currentColor; opacity: 0.7; }
+:where(button, input, select, label.btn):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.wave { position: relative; border-radius: 10px; background: var(--well); border: 1px solid var(--line); overflow: hidden; }
+canvas { display: block; width: 100%; }
+#srcCanvas { height: 150px; touch-action: none; cursor: ew-resize; }
+#outCanvas { height: 136px; }
+.playhead { position: absolute; top: 0; bottom: 18px; width: 2px; background: var(--signal); left: 0; pointer-events: none; }
+.hint { margin: 0; font-size: 13px; color: var(--muted); }
+.hint.warn { color: var(--warn); }
+.hint.ok { color: var(--ok); }
+.ideas { margin: 0; font-size: 13px; color: var(--muted); }
+.ideas b { color: var(--ink); font-weight: 600; }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.stats div { border-top: 1px solid var(--line); padding-top: 8px; min-width: 0; }
+.stats dt { font-family: var(--f-body); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.stats dd { margin: 2px 0 0; font-size: 15px; font-weight: 500; }
+@media (max-width: 520px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.pill { font-family: var(--f-mono); font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.pill.ok { color: var(--ok); border-color: currentColor; }
+.pill.warn { color: var(--warn); border-color: currentColor; }
+.save { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.save input[type="text"] {
+  font: inherit; font-family: var(--f-mono); font-size: 13px; padding: 9px 11px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--well); color: var(--ink); min-width: 0; flex: 1 1 160px;
+}
+
+.presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 1060px) and (min-width: 881px) { .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.preset {
+  font: inherit; text-align: left; cursor: pointer; padding: 9px 10px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--well); color: var(--ink);
+  display: flex; flex-direction: column; gap: 1px; min-width: 0;
+}
+.preset:hover { border-color: var(--muted); }
+.preset b { font-family: var(--f-display); font-weight: 700; font-size: 15px; }
+.preset small { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.preset[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); box-shadow: inset 0 0 0 1px var(--accent); }
+
+.group { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.group h3 { margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.ctl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline; }
+.ctl label { font-size: 14px; }
+.ctl output { font-family: var(--f-mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ctl input[type="range"] { grid-column: 1 / -1; width: 100%; margin: 2px 0 0; accent-color: var(--accent); }
+.ctl.off { opacity: 0.4; }
+.switch { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; }
+.switch input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; }
+@media (prefers-reduced-motion: reduce) { .btn.rec.on .dot { animation: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Noisy<span>.</span></h1>
+      <p>Neem een geluid op met je mond, handen of bureau en vorm het tot een UI-geluid: kort, strak en op een vast niveau. Alles draait in je browser; er wordt niets geüpload.</p>
+    </div>
+    <div class="spec mono">48 kHz · 16-bit · mono WAV</div>
+  </header>
+
+  <main class="grid">
+    <section class="strip" id="srcStrip" aria-labelledby="h-src">
+      <div class="head">
+        <h2 id="h-src">Bron</h2>
+        <span class="tag mono" id="srcName">—</span>
+      </div>
+      <div class="row">
+        <button type="button" id="recBtn" class="btn rec"><span class="dot"></span><span id="recLabel">Opnemen</span></button>
+        <label class="btn" for="fileIn" tabindex="0" id="fileLabel">Bestand kiezen</label>
+        <input type="file" id="fileIn" accept="audio/*" hidden>
+        <button type="button" id="trimBtn" class="btn ghost">Stilte wegknippen</button>
+        <button type="button" id="playSrcBtn" class="btn ghost">▶ Origineel</button>
+        <button type="button" id="sampleBtn" class="btn ghost">Voorbeeld</button>
+      </div>
+      <div class="wave"><canvas id="srcCanvas" aria-label="Golfvorm van de bron. Sleep links of rechts om het gebruikte stuk te kiezen."></canvas></div>
+      <p class="hint" id="srcHint">Sleep over de golfvorm om het begin en eind (oranje) te verplaatsen. Je kunt ook een audiobestand op dit vlak slepen.</p>
+      <p class="ideas"><b>Goede bronnen:</b> tongklik, vinger tegen je wang, pen op tafel, flessendop, rits, nagel tegen een glas. Neem dichtbij de microfoon op, in een stille ruimte.</p>
+    </section>
+
+    <section class="strip" aria-labelledby="h-out">
+      <div class="head">
+        <h2 id="h-out">Resultaat</h2>
+        <span class="pill" id="durPill">—</span>
+      </div>
+      <div class="wave"><canvas id="outCanvas" aria-label="Golfvorm van het resultaat met tijdlijn in milliseconden."></canvas><div class="playhead" id="playhead" hidden></div></div>
+      <dl class="stats mono">
+        <div><dt>Lengte</dt><dd id="stLen">—</dd></div>
+        <div><dt>Piek</dt><dd id="stPeak">—</dd></div>
+        <div><dt>Toon</dt><dd id="stPitch">—</dd></div>
+        <div><dt>Bestand</dt><dd id="stSize">—</dd></div>
+      </dl>
+      <div class="save">
+        <button type="button" id="playBtn" class="btn primary">▶ Afspelen <kbd>spatie</kbd></button>
+        <input type="text" id="fileName" value="ui-tap" aria-label="Bestandsnaam" spellcheck="false">
+        <button type="button" id="saveBtn" class="btn">Download WAV</button>
+      </div>
+      <p class="hint" id="saveHint"></p>
+    </section>
+
+    <aside class="controls" aria-labelledby="h-shape">
+      <div class="head">
+        <h2 id="h-shape">Vorm</h2>
+        <label class="switch"><input type="checkbox" id="autoPlay" checked> Direct afspelen</label>
+      </div>
+      <div class="presets" id="presets" role="group" aria-label="Voorinstellingen"></div>
+      <div id="ctls"></div>
+    </aside>
+  </main>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = (s) => document.querySelector(s);
+const SR = 48000;
+
+/* ---------- presets: ranges are rough duration guidelines for that interaction ---------- */
+const BASE = { pitch: 0, reverse: false, length: 90, attack: 1, punch: 4, hp: 250, lp: 9000, crush: 0, room: 0,
+  layer: false, interval: 7, offset: 80, layerGain: 70, peak: -6 };
+const PRESETS = {
+  tap:     { name: 'Tap',     use: 'Knop indrukken',     range: [40, 150],  p: { length: 90, attack: 1, punch: 4, hp: 250, lp: 9000 } },
+  click:   { name: 'Klik',    use: 'Checkbox, tab',      range: [15, 80],   p: { pitch: 5, length: 45, attack: 0, punch: 6, hp: 900, lp: 14000 } },
+  pop:     { name: 'Pop',     use: 'In winkelmand',      range: [60, 200],  p: { pitch: 3, length: 130, attack: 2, punch: 3, hp: 180, lp: 6500 } },
+  toggle:  { name: 'Toggle',  use: 'Schakelaar aan',     range: [60, 220],  p: { pitch: 4, length: 80, attack: 1, punch: 4, hp: 400, lp: 10000, layer: true, interval: 5, offset: 55, layerGain: 65 } },
+  success: { name: 'Succes',  use: 'Bestelling geplaatst', range: [200, 600], p: { pitch: 2, length: 200, attack: 2, punch: 2.2, hp: 300, lp: 9000, room: 18, layer: true, interval: 7, offset: 90, layerGain: 85 } },
+  error:   { name: 'Fout',    use: 'Formulierfout',      range: [150, 500], p: { pitch: -5, length: 130, attack: 3, punch: 2, hp: 120, lp: 2800, crush: 25, layer: true, interval: -1, offset: 120, layerGain: 90 } },
+  notify:  { name: 'Melding', use: 'Nieuw bericht',      range: [250, 900], p: { pitch: 7, length: 320, attack: 3, punch: 1.6, hp: 500, lp: 12000, room: 32, layer: true, interval: 12, offset: 110, layerGain: 60 } },
+  swoosh:  { name: 'Swoosh',  use: 'Verzenden, slide',   range: [150, 450], p: { pitch: -2, reverse: true, length: 260, attack: 140, punch: 1.2, hp: 900, lp: 12000, room: 12 } },
+};
+let presetKey = 'tap';
+let state = { ...BASE, ...PRESETS.tap.p };
+
+const INTERVALS = { 0: 'unisono', 1: 'kl. secunde', 2: 'gr. secunde', 3: 'kl. terts', 4: 'gr. terts', 5: 'kwart', 6: 'tritonus',
+  7: 'kwint', 8: 'kl. sext', 9: 'gr. sext', 10: 'kl. septiem', 11: 'gr. septiem', 12: 'octaaf' };
+const sign = (v) => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v);
+const hz = (v) => (v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) + ' kHz' : Math.round(v) + ' Hz');
+const CONTROLS = [
+  ['Toon', [
+    { k: 'pitch', label: 'Toonhoogte', min: -24, max: 24, step: 1, fmt: (v) => sign(v) + ' st' },
+    { k: 'reverse', label: 'Achterstevoren', toggle: true },
+  ]],
+  ['Verloop', [
+    { k: 'length', label: 'Lengte', min: 20, max: 1200, step: 5, fmt: (v) => v + ' ms' },
+    { k: 'attack', label: 'Aanzet (fade-in)', min: 0, max: 250, step: 1, fmt: (v) => v + ' ms' },
+    { k: 'punch', label: 'Snapheid (hoe snel het wegsterft)', min: 0.5, max: 8, step: 0.1, fmt: (v) => (+v).toFixed(1) + '×' },
+  ]],
+  ['Klankkleur', [
+    { k: 'hp', label: 'Lage tonen weg onder', min: 20, max: 4000, log: true, fmt: hz },
+    { k: 'lp', label: 'Hoge tonen weg boven', min: 500, max: 20000, log: true, fmt: hz },
+    { k: 'crush', label: 'Lo-fi', min: 0, max: 100, step: 1, fmt: (v) => v + '%' },
+    { k: 'room', label: 'Ruimte (galm)', min: 0, max: 100, step: 1, fmt: (v) => v + '%' },
+  ]],
+  ['Tweede stem', [
+    { k: 'layer', label: 'Tweede stem erbij (voor tweetonige geluiden)', toggle: true },
+    { k: 'interval', label: 'Interval', min: -12, max: 12, step: 1, fmt: (v) => sign(v) + ' st · ' + INTERVALS[Math.abs(v)], dep: 'layer' },
+    { k: 'offset', label: 'Vertraging', min: 10, max: 300, step: 5, fmt: (v) => v + ' ms', dep: 'layer' },
+    { k: 'layerGain', label: 'Volume', min: 0, max: 100, step: 1, fmt: (v) => v + '%', dep: 'layer' },
+  ]],
+  ['Export', [
+    { k: 'peak', label: 'Piekniveau', min: -24, max: -1, step: 1, fmt: (v) => sign(v) + ' dBFS' },
+  ]],
+];
+const ALL = CONTROLS.flatMap(([, list]) => list);
+
+/* ---------- audio context ---------- */
+let ac = null;
+const getAC = () => (ac ||= new (window.AudioContext || window.webkitAudioContext)());
+
+/* ---------- source ---------- */
+let src = null;           // { data: Float32Array, sr, name }
+let trim = { start: 0, end: 0 };
+
+function makeSample() {
+  const sr = 48000, n = Math.floor(sr * 1.1), d = new Float32Array(n);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+  for (let i = 0; i < n; i++) d[i] = rnd() * 0.0015;
+  const t0 = Math.floor(sr * 0.42), burst = sr * 0.004;
+  for (let i = 0; i < sr * 0.25; i++) {
+    const t = i / sr;
+    const v = 0.55 * Math.sin(2 * Math.PI * 1350 * t) * Math.exp(-t / 0.018)
+            + 0.35 * Math.sin(2 * Math.PI * 420 * t + 0.3) * Math.exp(-t / 0.05)
+            + (i < burst ? rnd() * 0.6 * (1 - i / burst) : 0);
+    d[t0 + i] += v * 0.8;
+  }
+  return { data: d, sr, name: 'Voorbeeld: synthetische tongklik' };
+}
+
+function setSource(s) {
+  src = s;
+  $('#srcName').textContent = s.name;
+  autoTrim();
+  drawSrc();
+}
+
+function autoTrim() {
+  const d = src.data, sr = src.sr;
+  let peak = 0;
+  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; }
+  const th = peak * 0.06;
+  let first = 0, last = d.length - 1;
+  while (first < d.length && Math.abs(d[first]) < th) first++;
+  while (last > first && Math.abs(d[last]) < th) last--;
+  trim.start = Math.max(0, first - 0.004 * sr) / sr;
+  trim.end = Math.min(d.length, last + 0.03 * sr) / sr;
+  if (trim.end - trim.start < 0.01) { trim.start = 0; trim.end = d.length / sr; }
+  updateTrimLabel();
+}
+
+function updateTrimLabel() {
+  if (!src) return;
+  const ms = Math.round((trim.end - trim.start) * 1000);
+  $('#srcName').textContent = `${src.name} · selectie ${ms} ms`;
+}
+
+async function loadArrayBuffer(ab, name) {
+  try {
+    const b = await getAC().decodeAudioData(ab);
+    const n = Math.min(b.length, b.sampleRate * 30);
+    const d = new Float32Array(n);
+    for (let c = 0; c < b.numberOfChannels; c++) {
+      const ch = b.getChannelData(c);
+      for (let i = 0; i < n; i++) d[i] += ch[i] / b.numberOfChannels;
+    }
+    setSource({ data: d, sr: b.sampleRate, name });
+    hint('#srcHint', b.length > n ? 'Alleen de eerste 30 seconden zijn geladen.' : 'Geladen. Stilte aan begin en eind is weggeknipt.', b.length > n ? 'warn' : 'ok');
+    schedule(true);
+  } catch (e) {
+    hint('#srcHint', 'Dit bestand kan niet worden gelezen. Probeer WAV, MP3, M4A of OGG.', 'warn');
+  }
+}
+
+/* ---------- recording ---------- */
+let rec = null, recTimer = 0;
+$('#recBtn').addEventListener('click', async () => {
+  if (rec) { rec.stop(); return; }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch (e) {
+    hint('#srcHint', 'De microfoon is hier niet beschikbaar. Geef toestemming in je browser, of neem op met je telefoon (bijv. Dictafoon) en kies het bestand via "Bestand kiezen".', 'warn');
+    return;
+  }
+  const mr = new MediaRecorder(stream);
+  const chunks = [];
+  const t0 = performance.now();
+  mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  mr.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    clearInterval(recTimer); rec = null;
+    $('#recBtn').classList.remove('on'); $('#recLabel').textContent = 'Opnemen';
+    const blob = new Blob(chunks, { type: mr.mimeType });
+    const stamp = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    await loadArrayBuffer(await blob.arrayBuffer(), 'Opname ' + stamp);
+  };
+  mr.start(); rec = mr;
+  $('#recBtn').classList.add('on');
+  recTimer = setInterval(() => {
+    const s = (performance.now() - t0) / 1000;
+    $('#recLabel').textContent = `Stop · ${s.toFixed(1)} s`;
+    if (s >= 6 && rec) rec.stop();
+  }, 100);
+  hint('#srcHint', 'Opname loopt (max. 6 seconden). Maak je geluid en klik op Stop.', '');
+});
+
+$('#fileIn').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  await loadArrayBuffer(await f.arrayBuffer(), f.name);
+  e.target.value = '';
+});
+$('#fileLabel').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#fileIn').click(); } });
+const strip = $('#srcStrip');
+strip.addEventListener('dragover', (e) => { e.preventDefault(); strip.classList.add('drop'); });
+strip.addEventListener('dragleave', () => strip.classList.remove('drop'));
+strip.addEventListener('drop', async (e) => {
+  e.preventDefault(); strip.classList.remove('drop');
+  const f = e.dataTransfer.files[0]; if (f) await loadArrayBuffer(await f.arrayBuffer(), f.name);
+});
+$('#sampleBtn').addEventListener('click', () => { setSource(makeSample()); hint('#srcHint', 'Voorbeeldgeluid geladen.', ''); schedule(true); });
+$('#trimBtn').addEventListener('click', () => { if (!src) return; autoTrim(); drawSrc(); schedule(true); });
+$('#playSrcBtn').addEventListener('click', () => {
+  if (!src) return;
+  const a = Math.floor(trim.start * src.sr), b = Math.floor(trim.end * src.sr);
+  play(src.data.slice(a, b), src.sr, false);
+});
+
+/* ---------- trim dragging ---------- */
+const srcCanvas = $('#srcCanvas');
+let dragging = null;
+const tAt = (e) => {
+  const r = srcCanvas.getBoundingClientRect();
+  return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * (src.data.length / src.sr);
+};
+srcCanvas.addEventListener('pointerdown', (e) => {
+  if (!src) return;
+  const t = tAt(e);
+  dragging = Math.abs(t - trim.start) <= Math.abs(t - trim.end) ? 'start' : 'end';
+  srcCanvas.setPointerCapture(e.pointerId);
+  moveHandle(t);
+});
+srcCanvas.addEventListener('pointermove', (e) => { if (dragging) moveHandle(tAt(e)); });
+const endDrag = () => { if (!dragging) return; dragging = null; schedule(true); };
+srcCanvas.addEventListener('pointerup', endDrag);
+srcCanvas.addEventListener('pointercancel', endDrag);
+function moveHandle(t) {
+  const minGap = 0.01;
+  if (dragging === 'start') trim.start = Math.min(t, trim.end - minGap);
+  else trim.end = Math.max(t, trim.start + minGap);
+  updateTrimLabel(); drawSrc(); schedule(false);
+}
+
+/* ---------- rendering ---------- */
+let out = null;           // Float32Array at SR
+let renderId = 0;
+
+function envCurve(L) {
+  const N = 512, c = new Float32Array(N);
+  const a = Math.min(Math.max(state.attack, 0.5) / 1000, L * 0.9) / L;
+  const k = state.punch;
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1);
+    c[i] = t < a ? t / a : Math.pow(Math.max(0, 1 - (t - a) / (1 - a)), k);
+  }
+  return c;
+}
+
+function makeIR(oc, dur) {
+  const n = Math.floor(dur * SR), b = oc.createBuffer(1, n, SR), d = b.getChannelData(0);
+  let seed = 11;
+  for (let i = 0; i < n; i++) {
+    seed = (seed * 16807) % 2147483647;
+    d[i] = ((seed / 2147483647) * 2 - 1) * Math.pow(1 - i / n, 3);
+  }
+  return b;
+}
+
+function voice(oc, buf, dest, t0, rate, gain) {
+  const L = state.length / 1000;
+  const s = oc.createBufferSource();
+  s.buffer = buf; s.playbackRate.value = rate;
+  const env = oc.createGain(); env.gain.value = 0;
+  env.gain.setValueCurveAtTime(envCurve(L), t0, L);
+  const g = oc.createGain(); g.gain.value = gain;
+  s.connect(env).connect(g).connect(dest);
+  s.start(t0); s.stop(t0 + L);
+}
+
+async function render() {
+  if (!src) return;
+  const id = ++renderId;
+  const P = state;
+  const a = Math.floor(trim.start * src.sr);
+  const b = Math.max(a + 32, Math.floor(trim.end * src.sr));
+  const slice = src.data.slice(a, b);
+  if (P.reverse) slice.reverse();
+  const L = P.length / 1000;
+  const off = P.layer ? P.offset / 1000 : 0;
+  const tail = P.room > 0 ? 0.25 + (P.room / 100) * 0.6 : 0.01;
+  const total = L + off + tail + 0.02;
+  const oc = new OfflineAudioContext(1, Math.ceil(total * SR), SR);
+  const buf = oc.createBuffer(1, slice.length, src.sr);
+  buf.copyToChannel(slice, 0);
+
+  const bus = oc.createGain();
+  const hp = oc.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = P.hp; hp.Q.value = 0.707;
+  const lp = oc.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.min(P.lp, SR / 2 - 100); lp.Q.value = 0.707;
+  bus.connect(hp).connect(lp);
+  const dry = oc.createGain(); dry.gain.value = 1 - (P.room / 100) * 0.5;
+  lp.connect(dry).connect(oc.destination);
+  if (P.room > 0) {
+    const cv = oc.createConvolver(); cv.buffer = makeIR(oc, tail);
+    const wet = oc.createGain(); wet.gain.value = (P.room / 100) * 0.35;
+    lp.connect(cv).connect(wet).connect(oc.destination);
+  }
+  const rate = Math.pow(2, P.pitch / 12);
+  voice(oc, buf, bus, 0, rate, 1);
+  if (P.layer) voice(oc, buf, bus, off, Math.pow(2, (P.pitch + P.interval) / 12), P.layerGain / 100);
+
+  const rendered = await oc.startRendering();
+  if (id !== renderId) return;
+  let d = rendered.getChannelData(0).slice();
+
+  const peakOf = (x) => { let p = 0; for (let i = 0; i < x.length; i++) { const v = Math.abs(x[i]); if (v > p) p = v; } return p; };
+  const scale = (x, g) => { for (let i = 0; i < x.length; i++) x[i] *= g; };
+  let pk = peakOf(d);
+  if (pk < 1e-6) { out = d.subarray(0, 1024); drawOut(); return; }
+  scale(d, 1 / pk);
+  if (P.crush > 0) {
+    const c = P.crush / 100, q = Math.pow(2, 16 - c * 12 - 1), hold = 1 + Math.floor(c * 7);
+    let h = 0;
+    for (let i = 0; i < d.length; i++) { if (i % hold === 0) h = Math.round(d[i] * q) / q; d[i] = h; }
+    pk = peakOf(d); if (pk > 0) scale(d, 1 / pk);
+  }
+  scale(d, Math.pow(10, P.peak / 20));
+  // cut the silent tail, then a 4 ms fade so the file never ends on a click
+  const floor = Math.pow(10, (P.peak - 54) / 20);
+  let last = d.length - 1;
+  while (last > 0 && Math.abs(d[last]) < floor) last--;
+  d = d.slice(0, Math.min(d.length, last + Math.floor(0.004 * SR) + 1));
+  const fade = Math.min(d.length, Math.floor(0.004 * SR));
+  for (let i = 0; i < fade; i++) d[d.length - 1 - i] *= i / fade;
+  out = d;
+  drawOut();
+  updateStats();
+}
+
+let rTimer = 0, wantPlay = false;
+function schedule(playAfter) {
+  wantPlay = wantPlay || playAfter;
+  clearTimeout(rTimer);
+  rTimer = setTimeout(async () => {
+    const p = wantPlay; wantPlay = false;
+    await render();
+    if (p && $('#autoPlay').checked && out) play(out, SR, true);
+  }, 40);
+}
+
+/* ---------- playback ---------- */
+let playing = null, raf = 0;
+function play(data, sr, isOut) {
+  const ctx = getAC();
+  if (ctx.state === 'suspended') ctx.resume();
+  if (playing) { try { playing.stop(); } catch (e) {} }
+  const b = ctx.createBuffer(1, data.length, sr);
+  b.copyToChannel(data, 0);
+  const s = ctx.createBufferSource();
+  s.buffer = b; s.connect(ctx.destination); s.start();
+  playing = s;
+  const ph = $('#playhead');
+  cancelAnimationFrame(raf); ph.hidden = true;
+  if (!isOut) return;
+  const dur = data.length / sr, start = performance.now();
+  ph.hidden = false;
+  const step = () => {
+    const t = (performance.now() - start) / 1000 / dur;
+    if (t >= 1) { ph.hidden = true; return; }
+    ph.style.left = (t * 100) + '%';
+    raf = requestAnimationFrame(step);
+  };
+  step();
+}
+$('#playBtn').addEventListener('click', () => out && play(out, SR, true));
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' || e.repeat) return;
+  const t = e.target;
+  if (t.tagName === 'BUTTON' || t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type !== 'range' && t.type !== 'checkbox')) return;
+  e.preventDefault();
+  if (out) play(out, SR, true);
+});
+
+/* ---------- drawing ---------- */
+const tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function fit(c) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr);
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  return dpr;
+}
+function wave(g, data, x0, x1, W, top, H, color, gain) {
+  const n = data.length, mid = top + H / 2;
+  g.fillStyle = color;
+  for (let x = Math.floor(x0); x < Math.ceil(x1); x++) {
+    const i0 = Math.floor((x / W) * n), i1 = Math.max(i0 + 1, Math.floor(((x + 1) / W) * n));
+    let mn = 0, mx = 0;
+    for (let i = i0; i < i1 && i < n; i++) { const v = data[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
+    const y0 = mid - Math.min(1, mx * gain) * H / 2, y1 = mid - Math.max(-1, mn * gain) * H / 2;
+    g.fillRect(x, y0, 1, Math.max(1, y1 - y0));
+  }
+}
+function drawSrc() {
+  const c = srcCanvas, dpr = fit(c), g = c.getContext('2d'), W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  if (!src) return;
+  let pk = 0; for (let i = 0; i < src.data.length; i++) { const v = Math.abs(src.data[i]); if (v > pk) pk = v; }
+  const gain = pk > 0 ? 0.92 / pk : 1;
+  const dur = src.data.length / src.sr;
+  const xs = (trim.start / dur) * W, xe = (trim.end / dur) * W;
+  g.fillStyle = tok('--line'); g.fillRect(0, H / 2, W, 1);
+  wave(g, src.data, 0, W, W, 8 * dpr, H - 16 * dpr, tok('--wave-dim'), gain);
+  wave(g, src.data, xs, xe, W, 8 * dpr, H - 16 * dpr, tok('--wave'), gain);
+  const sig = tok('--signal');
+  g.fillStyle = sig;
+  for (const x of [xs, xe]) {
+    g.fillRect(Math.round(x - dpr), 0, 2 * dpr, H);
+    g.fillRect(Math.round(x - 5 * dpr), 0, 10 * dpr, 14 * dpr);
+    g.fillRect(Math.round(x - 5 * dpr), H - 14 * dpr, 10 * dpr, 14 * dpr);
+  }
+}
+function drawOut() {
+  const c = $('#outCanvas'), dpr = fit(c), g = c.getContext('2d'), W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  if (!out) return;
+  const ruler = 18 * dpr, h = H - ruler;
+  const ms = (out.length / SR) * 1000;
+  g.fillStyle = tok('--line'); g.fillRect(0, h / 2, W, 1); g.fillRect(0, h, W, 1);
+  wave(g, out, 0, W, W, 8 * dpr, h - 16 * dpr, tok('--accent'), 1 / Math.max(0.05, Math.pow(10, state.peak / 20)) * 0.92);
+  const steps = [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000];
+  const target = W / dpr < 420 ? 4 : 7;
+  const step = steps.find((s) => ms / s <= target) || 1000;
+  g.font = `${11 * dpr}px "IBM Plex Mono", ui-monospace, monospace`;
+  g.textBaseline = 'middle';
+  for (let t = 0; t <= ms + 0.001; t += step) {
+    const x = (t / ms) * W;
+    g.fillStyle = tok('--line'); g.fillRect(Math.round(x), h, 1, 5 * dpr);
+    const label = t === 0 ? '0 ms' : String(t);
+    g.fillStyle = tok('--muted');
+    const tw = g.measureText(label).width;
+    const lx = Math.min(Math.max(x + 3 * dpr, 2 * dpr), W - tw - 3 * dpr);
+    g.fillText(label, lx, h + ruler / 2 + dpr);
+  }
+}
+function redraw() { drawSrc(); drawOut(); }
+new ResizeObserver(redraw).observe(document.querySelector('.grid'));
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
+new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+/* ---------- stats ---------- */
+function updateStats() {
+  const ms = Math.round((out.length / SR) * 1000);
+  $('#stLen').textContent = ms + ' ms';
+  $('#stPeak').textContent = sign(state.peak) + ' dBFS';
+  $('#stPitch').textContent = sign(state.pitch) + ' st';
+  const bytes = 44 + out.length * 2;
+  $('#stSize').textContent = bytes < 1024 * 1024 ? (bytes / 1024).toFixed(1) + ' kB' : (bytes / 1048576).toFixed(2) + ' MB';
+  const p = PRESETS[presetKey], [lo, hi] = p.range, pill = $('#durPill');
+  if (ms < lo) { pill.className = 'pill warn'; pill.textContent = `korter dan gebruikelijk voor ${p.name} (${lo}–${hi} ms)`; }
+  else if (ms > hi) { pill.className = 'pill warn'; pill.textContent = `langer dan gebruikelijk voor ${p.name} (${lo}–${hi} ms)`; }
+  else { pill.className = 'pill ok'; pill.textContent = `past bij ${p.name} (${lo}–${hi} ms)`; }
+}
+
+/* ---------- controls ---------- */
+function buildPresets() {
+  const box = $('#presets');
+  for (const [key, p] of Object.entries(PRESETS)) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'preset'; b.dataset.key = key; b.id = 'preset-' + key;
+    b.innerHTML = `<b></b><small></small><small class="mono"></small>`;
+    b.children[0].textContent = p.name;
+    b.children[1].textContent = p.use;
+    b.children[2].textContent = `${p.range[0]}–${p.range[1]} ms`;
+    b.addEventListener('click', () => applyPreset(key));
+    box.append(b);
+  }
+}
+function applyPreset(key) {
+  presetKey = key;
+  state = { ...BASE, ...PRESETS[key].p, peak: state.peak };
+  const f = $('#fileName');
+  if (/^ui-[a-z]+$/.test(f.value)) f.value = 'ui-' + key;
+  syncControls();
+  schedule(true);
+}
+const toPos = (c, v) => Math.round((Math.log(v / c.min) / Math.log(c.max / c.min)) * 1000);
+const fromPos = (c, p) => Math.round(c.min * Math.pow(c.max / c.min, p / 1000));
+function buildControls() {
+  const root = $('#ctls');
+  for (const [title, list] of CONTROLS) {
+    const grp = document.createElement('div'); grp.className = 'group';
+    const h = document.createElement('h3'); h.textContent = title; grp.append(h);
+    for (const c of list) {
+      const id = 'p-' + c.k;
+      if (c.toggle) {
+        const lab = document.createElement('label'); lab.className = 'switch';
+        const inp = document.createElement('input'); inp.type = 'checkbox'; inp.id = id;
+        inp.addEventListener('change', () => { state[c.k] = inp.checked; syncControls(); schedule(true); });
+        lab.append(inp, document.createTextNode(' ' + c.label));
+        grp.append(lab);
+        continue;
+      }
+      const row = document.createElement('div'); row.className = 'ctl'; row.id = 'row-' + c.k;
+      const lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = c.label;
+      const o = document.createElement('output'); o.htmlFor = id; o.id = 'o-' + c.k;
+      const inp = document.createElement('input'); inp.type = 'range'; inp.id = id;
+      if (c.log) { inp.min = 0; inp.max = 1000; inp.step = 1; }
+      else { inp.min = c.min; inp.max = c.max; inp.step = c.step; }
+      inp.addEventListener('input', () => {
+        state[c.k] = c.log ? fromPos(c, +inp.value) : +inp.value;
+        o.textContent = c.fmt(state[c.k]);
+        schedule(false);
+      });
+      inp.addEventListener('change', () => schedule(true));
+      row.append(lab, o, inp);
+      grp.append(row);
+    }
+    root.append(grp);
+  }
+}
+function syncControls() {
+  for (const c of ALL) {
+    const inp = $('#p-' + c.k);
+    if (c.toggle) { inp.checked = !!state[c.k]; continue; }
+    inp.value = c.log ? toPos(c, state[c.k]) : state[c.k];
+    $('#o-' + c.k).textContent = c.fmt(state[c.k]);
+    if (c.dep) { const on = !!state[c.dep]; inp.disabled = !on; $('#row-' + c.k).classList.toggle('off', !on); }
+  }
+  document.querySelectorAll('.preset').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.key === presetKey)));
+}
+
+/* ---------- export ---------- */
+function encodeWav(data, sr) {
+  const n = data.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) { const s = Math.max(-1, Math.min(1, data[i])); v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true); }
+  return new Uint8Array(buf);
+}
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipOne(name, u8) {
+  const nb = new TextEncoder().encode(name), crc = crc32(u8);
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const lh = new Uint8Array(30 + nb.length), l = new DataView(lh.buffer);
+  l.setUint32(0, 0x04034b50, true); l.setUint16(4, 20, true); l.setUint16(6, 0x0800, true); l.setUint16(8, 0, true);
+  l.setUint16(10, dosTime, true); l.setUint16(12, dosDate, true); l.setUint32(14, crc, true);
+  l.setUint32(18, u8.length, true); l.setUint32(22, u8.length, true); l.setUint16(26, nb.length, true); l.setUint16(28, 0, true);
+  lh.set(nb, 30);
+  const cd = new Uint8Array(46 + nb.length), c = new DataView(cd.buffer);
+  c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true);
+  c.setUint16(12, dosTime, true); c.setUint16(14, dosDate, true); c.setUint32(16, crc, true);
+  c.setUint32(20, u8.length, true); c.setUint32(24, u8.length, true); c.setUint16(28, nb.length, true);
+  c.setUint32(42, 0, true); cd.set(nb, 46);
+  const end = new Uint8Array(22), e = new DataView(end.buffer);
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, 1, true); e.setUint16(10, 1, true);
+  e.setUint32(12, cd.length, true); e.setUint32(16, lh.length + u8.length, true);
+  return new Blob([lh, u8, cd, end], { type: 'application/zip' });
+}
+
+// Inside a claude.ai artifact files go through the downloads capability; opened as a local file, a normal download link works.
+const inArtifact = !!(window.claude && typeof window.claude.use === 'function');
+const downloadsP = inArtifact ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
+if (inArtifact) {
+  $('#saveBtn').textContent = 'Download (.zip met WAV)';
+  hint('#saveHint', 'In deze online versie zit de WAV in een .zip, omdat .wav hier niet direct gedownload mag worden.', '');
+}
+$('#saveBtn').addEventListener('click', async () => {
+  if (!out) return;
+  const base = ($('#fileName').value || 'noisy').trim().replace(/\.wav$/i, '').replace(/[^\w\-. ]+/g, '-') || 'noisy';
+  const wav = encodeWav(out, SR);
+  if (inArtifact) {
+    const dl = await downloadsP;
+    if (!dl) { hint('#saveHint', 'Downloaden is in deze weergave niet beschikbaar. Open index.html uit de repository in je browser.', 'warn'); return; }
+    try {
+      await dl.save({ filename: base + '.zip', data: zipOne(base + '.wav', wav) });
+      hint('#saveHint', `Opgeslagen: ${base}.zip met ${base}.wav erin.`, 'ok');
+    } catch (err) {
+      if (err && err.code === 'declined') hint('#saveHint', 'Download geannuleerd.', '');
+      else if (err && err.code === 'rate_limited') hint('#saveHint', 'Er staat al een downloadvenster open. Rond dat eerst af.', 'warn');
+      else hint('#saveHint', 'Downloaden lukt hier niet. Open index.html uit de repository in je browser.', 'warn');
+    }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
+  const a = document.createElement('a'); a.href = url; a.download = base + '.wav';
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  hint('#saveHint', `Opgeslagen: ${base}.wav`, 'ok');
+});
+
+function hint(sel, text, kind) { const el = $(sel); el.textContent = text; el.className = 'hint' + (kind ? ' ' + kind : ''); }
+
+/* ---------- boot ---------- */
+buildPresets();
+buildControls();
+syncControls();
+setSource(makeSample());
+render();
+})();
+</script>
+<!-- ARTIFACT:END -->
+</body>
+</html>
