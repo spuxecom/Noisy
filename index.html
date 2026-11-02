@@ -290,13 +290,15 @@ function setSource(s) {
 }
 
 function autoTrim() {
+  // Select the loudest event: grow outward from the peak until 80 ms of quiet on each side.
   const d = src.data, sr = src.sr;
-  let peak = 0;
-  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; }
-  const th = peak * 0.06;
-  let first = 0, last = d.length - 1;
-  while (first < d.length && Math.abs(d[first]) < th) first++;
-  while (last > first && Math.abs(d[last]) < th) last--;
+  let peak = 0, pi = 0;
+  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > peak) { peak = a; pi = i; } }
+  const th = peak * 0.06, gap = Math.floor(0.08 * sr);
+  let first = pi, last = pi, quiet = 0;
+  for (let i = pi; i >= 0; i--) { if (Math.abs(d[i]) >= th) { first = i; quiet = 0; } else if (++quiet > gap) break; }
+  quiet = 0;
+  for (let i = pi; i < d.length; i++) { if (Math.abs(d[i]) >= th) { last = i; quiet = 0; } else if (++quiet > gap) break; }
   trim.start = Math.max(0, first - 0.004 * sr) / sr;
   trim.end = Math.min(d.length, last + 0.03 * sr) / sr;
   if (trim.end - trim.start < 0.01) { trim.start = 0; trim.end = d.length / sr; }
@@ -326,40 +328,92 @@ async function loadArrayBuffer(ab, name) {
   }
 }
 
-/* ---------- recording ---------- */
-let rec = null, recTimer = 0;
+/* ---------- recording ----------
+   Records raw samples through Web Audio instead of MediaRecorder: Safari on iPad/iPhone
+   produces files from MediaRecorder that it cannot always decode again. */
+const MAX_REC = 6;
+let rec = null;
 $('#recBtn').addEventListener('click', async () => {
-  if (rec) { rec.stop(); return; }
+  if (rec) { stopRec(true); return; }
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   } catch (e) {
     hint('#srcHint', inArtifact
-      ? 'Binnen Claude mag deze pagina je microfoon niet gebruiken. Open Noisy in Safari via https://spuxecom.github.io/Noisy/ om op te nemen, of neem op met Dictafoon, bewaar in Bestanden en kies het via "Bestand kiezen".'
+      ? 'Binnen Claude mag deze pagina je microfoon niet gebruiken. Open Noisy in Safari via https://raw.githack.com/spuxecom/Noisy/claude/noisy-ui-sounds/index.html om op te nemen, of kies een opname via "Bestand kiezen".'
       : 'De microfoon is geblokkeerd. Sta hem toe via het aA-menu in de adresbalk (Safari) of het slotje (Chrome) en probeer opnieuw.', 'warn');
     return;
   }
-  const mr = new MediaRecorder(stream);
+  // A fresh context created after the mic is open, so it runs at the mic's own sample rate (iOS records silence or garbage otherwise).
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  try { await ctx.resume(); } catch (e) {}
+  const input = ctx.createMediaStreamSource(stream);
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  const mute = ctx.createGain(); mute.gain.value = 0;
   const chunks = [];
-  const t0 = performance.now();
-  mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  mr.onstop = async () => {
-    stream.getTracks().forEach((t) => t.stop());
-    clearInterval(recTimer); rec = null;
-    $('#recBtn').classList.remove('on'); $('#recLabel').textContent = 'Opnemen';
-    const blob = new Blob(chunks, { type: mr.mimeType });
-    const stamp = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    await loadArrayBuffer(await blob.arrayBuffer(), 'Opname ' + stamp);
+  let drawQueued = false;
+  proc.onaudioprocess = (e) => {
+    if (!rec) return;
+    chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    if (!drawQueued) { drawQueued = true; requestAnimationFrame(() => { drawQueued = false; if (rec) drawLive(chunks, ctx.sampleRate); }); }
   };
-  mr.start(); rec = mr;
-  $('#recBtn').classList.add('on');
-  recTimer = setInterval(() => {
-    const s = (performance.now() - t0) / 1000;
-    $('#recLabel').textContent = `Stop · ${s.toFixed(1)} s`;
-    if (s >= 6 && rec) rec.stop();
+  input.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+  const t0 = performance.now();
+  const timer = setInterval(() => {
+    const sec = (performance.now() - t0) / 1000;
+    $('#recLabel').textContent = `Stop · ${sec.toFixed(1)} s`;
+    if (sec >= MAX_REC) stopRec(false);
   }, 100);
-  hint('#srcHint', 'Opname loopt (max. 6 seconden). Maak je geluid en klik op Stop.', '');
+  rec = { stream, ctx, input, proc, chunks, timer };
+  $('#recBtn').classList.add('on');
+  hint('#srcHint', `Opname loopt (max. ${MAX_REC} seconden). Je ziet je geluid hierboven binnenkomen. Tik op Stop als je klaar bent.`, '');
 });
+
+function stopRec(byTap) {
+  const r = rec; if (!r) return;
+  rec = null;
+  clearInterval(r.timer);
+  try { r.input.disconnect(); r.proc.disconnect(); } catch (e) {}
+  r.stream.getTracks().forEach((t) => t.stop());
+  const sr = r.ctx.sampleRate;
+  r.ctx.close();
+  // iOS changes the audio route while recording; start playback on a fresh context.
+  if (ac) { try { ac.close(); } catch (e) {} ac = null; }
+  getAC().resume();
+  $('#recBtn').classList.remove('on'); $('#recLabel').textContent = 'Opnemen';
+
+  let n = r.chunks.reduce((t, c) => t + c.length, 0);
+  const data = new Float32Array(n);
+  let o = 0; for (const c of r.chunks) { data.set(c, o); o += c.length; }
+  // drop the last 150 ms: that is the tap on Stop
+  const cut = byTap ? Math.floor(0.15 * sr) : 0;
+  const d = data.subarray(0, Math.max(0, n - cut));
+  let pk = 0; for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > pk) pk = v; }
+  if (d.length < sr * 0.1 || pk < 0.003) {
+    drawSrc();
+    hint('#srcHint', 'Er kwam (bijna) geen geluid binnen. Controleer of de juiste microfoon aan staat en maak je geluid wat dichter bij het apparaat.', 'warn');
+    return;
+  }
+  const stamp = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  setSource({ data: d.slice(), sr, name: 'Opname ' + stamp });
+  hint('#srcHint', 'Opgenomen. Het luidste geluid is automatisch geselecteerd; sleep de oranje grepen om bij te stellen.', 'ok');
+  schedule(true);
+}
+
+function drawLive(chunks, sr) {
+  const c = srcCanvas, dpr = fit(c), g = c.getContext('2d'), W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = tok('--line'); g.fillRect(0, H / 2, W, 1);
+  const total = MAX_REC * sr, cw = Math.max(1, W / (total / 4096));
+  g.fillStyle = tok('--rec');
+  let x = 0;
+  for (const ch of chunks) {
+    let pk = 0; for (let i = 0; i < ch.length; i += 4) { const v = Math.abs(ch[i]); if (v > pk) pk = v; }
+    const h = Math.max(dpr, Math.min(1, pk * 3) * (H - 16 * dpr));
+    g.fillRect(x, H / 2 - h / 2, Math.max(dpr, cw - dpr), h);
+    x += cw;
+  }
+}
 
 $('#fileIn').addEventListener('change', async (e) => {
   const f = e.target.files[0]; if (!f) return;
@@ -741,14 +795,14 @@ $('#saveBtn').addEventListener('click', async () => {
   const wav = encodeWav(out, SR);
   if (inArtifact) {
     const dl = await downloadsP;
-    if (!dl) { hint('#saveHint', 'Downloaden is in deze weergave niet beschikbaar. Open Noisy via https://spuxecom.github.io/Noisy/', 'warn'); return; }
+    if (!dl) { hint('#saveHint', 'Downloaden is in deze weergave niet beschikbaar. Open Noisy via https://raw.githack.com/spuxecom/Noisy/claude/noisy-ui-sounds/index.html', 'warn'); return; }
     try {
       await dl.save({ filename: base + '.zip', data: zipOne(base + '.wav', wav) });
       hint('#saveHint', `Opgeslagen: ${base}.zip met ${base}.wav erin.`, 'ok');
     } catch (err) {
       if (err && err.code === 'declined') hint('#saveHint', 'Download geannuleerd.', '');
       else if (err && err.code === 'rate_limited') hint('#saveHint', 'Er staat al een downloadvenster open. Rond dat eerst af.', 'warn');
-      else hint('#saveHint', 'Downloaden lukt hier niet. Open Noisy via https://spuxecom.github.io/Noisy/', 'warn');
+      else hint('#saveHint', 'Downloaden lukt hier niet. Open Noisy via https://raw.githack.com/spuxecom/Noisy/claude/noisy-ui-sounds/index.html', 'warn');
     }
     return;
   }
