@@ -149,7 +149,7 @@ canvas { display: block; width: 100%; }
       <h1>Noisy<span>.</span></h1>
       <p>Neem een geluid op met je mond, handen of bureau en vorm het tot een UI-geluid: kort, strak en op een vast niveau. Alles draait in je browser; er wordt niets geüpload.</p>
     </div>
-    <div class="spec mono">48 kHz · 16-bit · mono WAV</div>
+    <div class="spec mono">48 kHz · 16-bit · mono WAV · v4</div>
   </header>
 
   <main class="grid">
@@ -329,74 +329,111 @@ async function loadArrayBuffer(ab, name) {
 }
 
 /* ---------- recording ----------
-   Records raw samples through Web Audio instead of MediaRecorder: Safari on iPad/iPhone
-   produces files from MediaRecorder that it cannot always decode again. */
+   Two recorders run side by side, because iPad/iPhone Safari is unreliable with either one alone:
+   raw samples through Web Audio (preferred) and MediaRecorder as a backup. */
+const VERSION = 'v4';
 const MAX_REC = 6;
 let rec = null;
 $('#recBtn').addEventListener('click', async () => {
   if (rec) { stopRec(true); return; }
+  // Start audio inside the tap itself; iOS refuses to start it later.
+  const ctx = getAC();
+  if (ctx.state !== 'running') ctx.resume();
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   } catch (e) {
-    hint('#srcHint', inArtifact
-      ? 'Binnen Claude mag deze pagina je microfoon niet gebruiken. Open Noisy in Safari via https://raw.githack.com/spuxecom/Noisy/claude/noisy-ui-sounds/index.html om op te nemen, of kies een opname via "Bestand kiezen".'
-      : 'De microfoon is geblokkeerd. Sta hem toe via het aA-menu in de adresbalk (Safari) of het slotje (Chrome) en probeer opnieuw.', 'warn');
-    return;
+    if (e && e.name === 'OverconstrainedError') {
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e2) { e = e2; }
+    }
+    if (!stream) {
+      hint('#srcHint', inArtifact
+        ? 'Binnen Claude mag deze pagina je microfoon niet gebruiken. Open Noisy in Safari via https://raw.githack.com/spuxecom/Noisy/claude/noisy-ui-sounds/index.html om op te nemen, of kies een opname via "Bestand kiezen".'
+        : `De microfoon is geblokkeerd (${e && e.name}). Tik in Safari op aA in de adresbalk → Website-instellingen → Microfoon → Sta toe, herlaad en probeer opnieuw.`, 'warn');
+      return;
+    }
   }
-  // A fresh context created after the mic is open, so it runs at the mic's own sample rate (iOS records silence or garbage otherwise).
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  try { await ctx.resume(); } catch (e) {}
-  const input = ctx.createMediaStreamSource(stream);
-  const proc = ctx.createScriptProcessor(4096, 1, 1);
-  const mute = ctx.createGain(); mute.gain.value = 0;
-  const chunks = [];
-  let drawQueued = false;
-  proc.onaudioprocess = (e) => {
-    if (!rec) return;
-    chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-    if (!drawQueued) { drawQueued = true; requestAnimationFrame(() => { drawQueued = false; if (rec) drawLive(chunks, ctx.sampleRate); }); }
-  };
-  input.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
-  const t0 = performance.now();
-  const timer = setInterval(() => {
-    const sec = (performance.now() - t0) / 1000;
+  if (ctx.state !== 'running') { try { await ctx.resume(); } catch (e) {} }
+
+  const r = { stream, ctx, chunks: [], blobs: [], mr: null, t0: performance.now() };
+  // recorder 1: raw samples
+  try {
+    r.input = ctx.createMediaStreamSource(stream);
+    r.proc = ctx.createScriptProcessor(4096, 1, 1);
+    r.mute = ctx.createGain(); r.mute.gain.value = 0;
+    let queued = false;
+    r.proc.onaudioprocess = (e) => {
+      if (rec !== r) return;
+      r.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; if (rec === r) drawLive(r.chunks, ctx.sampleRate); }); }
+    };
+    r.input.connect(r.proc); r.proc.connect(r.mute); r.mute.connect(ctx.destination);
+  } catch (e) { r.rawError = e && e.name; }
+  // recorder 2: MediaRecorder backup
+  try {
+    if (window.MediaRecorder) {
+      r.mr = new MediaRecorder(stream);
+      r.mr.ondataavailable = (e) => { if (e.data && e.data.size) r.blobs.push(e.data); };
+      r.mr.start();
+    }
+  } catch (e) { r.mr = null; }
+
+  r.timer = setInterval(() => {
+    const sec = (performance.now() - r.t0) / 1000;
     $('#recLabel').textContent = `Stop · ${sec.toFixed(1)} s`;
+    if (sec > 1.2 && r.chunks.length === 0 && !r.warned) {
+      r.warned = true;
+      if (ctx.state !== 'running') ctx.resume();
+      hint('#srcHint', 'Opname loopt, maar ik zie nog geen live signaal. Maak je geluid gewoon; bij Stop probeer ik de reserve-opname.', 'warn');
+    }
     if (sec >= MAX_REC) stopRec(false);
   }, 100);
-  rec = { stream, ctx, input, proc, chunks, timer };
+  rec = r;
   $('#recBtn').classList.add('on');
   hint('#srcHint', `Opname loopt (max. ${MAX_REC} seconden). Je ziet je geluid hierboven binnenkomen. Tik op Stop als je klaar bent.`, '');
 });
 
-function stopRec(byTap) {
+async function stopRec(byTap) {
   const r = rec; if (!r) return;
   rec = null;
   clearInterval(r.timer);
-  try { r.input.disconnect(); r.proc.disconnect(); } catch (e) {}
-  r.stream.getTracks().forEach((t) => t.stop());
-  const sr = r.ctx.sampleRate;
-  r.ctx.close();
-  // iOS changes the audio route while recording; start playback on a fresh context.
-  if (ac) { try { ac.close(); } catch (e) {} ac = null; }
-  getAC().resume();
   $('#recBtn').classList.remove('on'); $('#recLabel').textContent = 'Opnemen';
+  try { r.input && r.input.disconnect(); r.proc && r.proc.disconnect(); r.mute && r.mute.disconnect(); } catch (e) {}
+  const mrDone = r.mr && r.mr.state !== 'inactive'
+    ? new Promise((res) => { r.mr.onstop = res; setTimeout(res, 1500); r.mr.stop(); })
+    : Promise.resolve();
+  await mrDone;
+  r.stream.getTracks().forEach((t) => t.stop());
 
-  let n = r.chunks.reduce((t, c) => t + c.length, 0);
-  const data = new Float32Array(n);
-  let o = 0; for (const c of r.chunks) { data.set(c, o); o += c.length; }
-  // drop the last 150 ms: that is the tap on Stop
-  const cut = byTap ? Math.floor(0.15 * sr) : 0;
-  const d = data.subarray(0, Math.max(0, n - cut));
-  let pk = 0; for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > pk) pk = v; }
-  if (d.length < sr * 0.1 || pk < 0.003) {
+  const sr = r.ctx.sampleRate;
+  const cut = byTap ? Math.floor(0.15 * sr) : 0;   // the tap on Stop
+  const n = r.chunks.reduce((t, c) => t + c.length, 0);
+  const raw = new Float32Array(n);
+  let o = 0; for (const c of r.chunks) { raw.set(c, o); o += c.length; }
+  const peakOf = (x) => { let p = 0; for (let i = 0; i < x.length; i++) { const v = Math.abs(x[i]); if (v > p) p = v; } return p; };
+  const stamp = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  let data = raw.subarray(0, Math.max(0, n - cut)), rate = sr, via = 'live';
+  let ok = data.length > sr * 0.1 && peakOf(data) > 0.003;
+  let backupInfo = r.mr ? (r.mr.mimeType || 'onbekend formaat') + ', ' + r.blobs.length + ' deel' : 'geen reserve';
+  if (!ok && r.blobs.length) {
+    try {
+      const blob = new Blob(r.blobs, { type: r.mr.mimeType });
+      const b = await getAC().decodeAudioData(await blob.arrayBuffer());
+      const d = new Float32Array(b.length);
+      for (let c = 0; c < b.numberOfChannels; c++) { const ch = b.getChannelData(c); for (let i = 0; i < b.length; i++) d[i] += ch[i] / b.numberOfChannels; }
+      const cut2 = byTap ? Math.floor(0.15 * b.sampleRate) : 0;
+      data = d.subarray(0, Math.max(0, d.length - cut2)); rate = b.sampleRate; via = 'reserve';
+      ok = data.length > rate * 0.1 && peakOf(data) > 0.003;
+    } catch (e) { backupInfo += ', niet te lezen (' + (e && e.name) + ')'; }
+  }
+  if (!ok) {
     drawSrc();
-    hint('#srcHint', 'Er kwam (bijna) geen geluid binnen. Controleer of de juiste microfoon aan staat en maak je geluid wat dichter bij het apparaat.', 'warn');
+    hint('#srcHint', `Er kwam geen geluid binnen. Stuur Claude deze regel: ${VERSION} · audio ${r.ctx.state} ${sr} Hz · live ${r.chunks.length} blokken, piek ${peakOf(raw).toFixed(4)}${r.rawError ? ' (' + r.rawError + ')' : ''} · reserve: ${backupInfo}`, 'warn');
     return;
   }
-  const stamp = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  setSource({ data: d.slice(), sr, name: 'Opname ' + stamp });
-  hint('#srcHint', 'Opgenomen. Het luidste geluid is automatisch geselecteerd; sleep de oranje grepen om bij te stellen.', 'ok');
+  setSource({ data: data.slice(), sr: rate, name: 'Opname ' + stamp });
+  hint('#srcHint', `Opgenomen${via === 'reserve' ? ' (via reserve-opname)' : ''}. Het luidste geluid is automatisch geselecteerd; sleep de oranje grepen om bij te stellen.`, 'ok');
   schedule(true);
 }
 
